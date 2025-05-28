@@ -1,0 +1,7 @@
+streamlit
+langchain
+groq
+chromadb
+sqlite-utils
+python-dotenv
+tiktoken
