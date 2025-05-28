@@ -3,7 +3,6 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 import os
-import tempfile
 from dotenv import load_dotenv
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
@@ -42,18 +41,16 @@ SQL:
 def gerar_sql(pergunta, schema):
     llm = ChatGroq(
         model_name="llama3-70b-8192",
-        groq_api_key = os.getenv("GROQ_API_KEY")
+        groq_api_key=os.getenv("GROQ_API_KEY")
     )
     chain = LLMChain(llm=llm, prompt=prompt)
     return chain.run(schema=schema, pergunta=pergunta)
 
 def extrair_sql(texto):
-    # Tenta pegar trecho entre ```sql e ```
     match = re.search(r"```sql(.*?)```", texto, re.DOTALL | re.IGNORECASE)
     if match:
         return match.group(1).strip()
     else:
-        # Se não encontrar, tenta extrair a partir de SELECT
         select_pos = texto.upper().find("SELECT")
         if select_pos != -1:
             return texto[select_pos:].strip()
@@ -63,38 +60,43 @@ def main():
     st.set_page_config(page_title="Otimizador SQL com IA", page_icon="🧠")
     st.title("🧠 Otimizador de Consultas SQL com IA")
 
-    st.markdown("Faça upload de um banco de dados `.db` para análise e melhoria de consultas.")
+    st.markdown("O banco de dados padrão é `transacoes.db`. Se desejar, envie outro banco `.db` para análise.")
+
+    # ➕ Usa transacoes.db como padrão, mas permite upload
+    db_path = "transacoes.db"
 
     uploaded_file = st.file_uploader("📁 Envie seu arquivo .db (SQLite):", type="db")
 
     if uploaded_file:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp_file:
-            tmp_file.write(uploaded_file.getvalue())
-            db_path = tmp_file.name
+        with open("uploaded.db", "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        db_path = "uploaded.db"
 
-        conn = sqlite3.connect(db_path)
-        schema = get_schema(conn)
-        st.success("Banco carregado com sucesso!")
-        st.text_area("📘 Schema extraído:", schema, height=600, disabled=True)
+    if not os.path.exists(db_path):
+        st.error(f"O arquivo {db_path} não foi encontrado. Verifique se ele está na mesma pasta do app.")
+        return
 
-        pergunta = st.text_area("❓ Pergunta ou pedido de melhoria:", height=100)
+    conn = sqlite3.connect(db_path)
+    schema = get_schema(conn)
+    st.success("Banco carregado com sucesso!")
+    st.text_area("📘 Schema extraído:", schema, height=600, disabled=True)
 
-        if st.button("Gerar SQL Otimizado"):
-            if not pergunta.strip():
-                st.warning("Digite uma pergunta antes de continuar.")
-            else:
-                resposta = gerar_sql(pergunta, schema)
-                sql = extrair_sql(resposta)
-                st.code(sql, language="sql")
+    pergunta = st.text_area("❓ Pergunta ou pedido de melhoria:", height=100)
 
-                try:
-                    df = pd.read_sql_query(sql, conn)
-                    st.success("✅ Consulta executada com sucesso!")
-                    st.dataframe(df)
-                except Exception as e:
-                    pass
+    if st.button("Gerar SQL Otimizado"):
+        if not pergunta.strip():
+            st.warning("Digite uma pergunta antes de continuar.")
+        else:
+            resposta = gerar_sql(pergunta, schema)
+            sql = extrair_sql(resposta)
+            st.code(sql, language="sql")
+
+            try:
+                df = pd.read_sql_query(sql, conn)
+                st.success("✅ Consulta executada com sucesso!")
+                st.dataframe(df)
+            except Exception as e:
+                st.error(f"❌ Erro ao executar SQL: {e}")
 
 if __name__ == "__main__":
     main()
-
-
